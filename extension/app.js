@@ -15,6 +15,23 @@
 
 'use strict';
 
+let optionalConfigPromise;
+
+function loadOptionalConfig() {
+  if (optionalConfigPromise) return optionalConfigPromise;
+
+  optionalConfigPromise = new Promise(resolve => {
+    const script = document.createElement('script');
+    script.src = 'config.local.js';
+    script.async = false;
+    script.addEventListener('load', () => resolve(true), { once: true });
+    script.addEventListener('error', () => resolve(false), { once: true });
+    document.head.appendChild(script);
+  });
+
+  return optionalConfigPromise;
+}
+
 
 /* ----------------------------------------------------------------
    CHROME TABS — Direct API Access
@@ -402,10 +419,11 @@ function renderPlannerItem(item, listType) {
   const isChecked = listType === 'daily'
     ? item.checkedOn === today
     : !!item.completed;
+  const safeText = escapeHtml(item.text);
 
   return `
-    <div class="planner-item ${isChecked ? 'checked' : ''}" data-planner-id="${item.id}">
-      <label class="planner-check-row">
+    <div class="planner-item ${isChecked ? 'checked' : ''}" data-planner-id="${item.id}" title="${safeText}">
+      <label class="planner-check-row" title="${safeText}">
         <input
           type="checkbox"
           class="planner-checkbox"
@@ -414,7 +432,7 @@ function renderPlannerItem(item, listType) {
           data-planner-id="${item.id}"
           ${isChecked ? 'checked' : ''}
         >
-        <span class="planner-item-text">${escapeHtml(item.text)}</span>
+        <span class="planner-item-text">${safeText}</span>
       </label>
       <button
         class="planner-remove"
@@ -942,7 +960,7 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
     try { domain = new URL(tab.url).hostname; } catch {}
     const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
     return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
+      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
         <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
@@ -1023,7 +1041,7 @@ function renderDomainCard(group) {
     try { domain = new URL(tab.url).hostname; } catch {}
     const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
     return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
+      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
         <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
@@ -1147,7 +1165,7 @@ function renderDeferredItem(item) {
       <input type="checkbox" class="deferred-checkbox" data-action="check-deferred" data-deferred-id="${item.id}">
       <div class="deferred-info">
         <a href="${item.url}" target="_blank" rel="noopener" class="deferred-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-          <img src="${faviconUrl}" alt="" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" onerror="this.style.display='none'">${item.title || item.url}
+          <img class="deferred-favicon" src="${faviconUrl}" alt="" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px">${item.title || item.url}
         </a>
         <div class="deferred-meta">
           <span>${domain}</span>
@@ -1690,8 +1708,25 @@ document.addEventListener('input', async (e) => {
   }
 });
 
+document.addEventListener('error', (e) => {
+  const target = e.target;
+  if (!(target instanceof HTMLImageElement)) return;
+
+  if (
+    target.classList.contains('chip-favicon') ||
+    target.classList.contains('deferred-favicon')
+  ) {
+    target.style.display = 'none';
+  }
+}, true);
+
 
 /* ----------------------------------------------------------------
    INITIALIZE
    ---------------------------------------------------------------- */
-renderDashboard();
+async function initialize() {
+  await loadOptionalConfig();
+  await renderDashboard();
+}
+
+initialize();
