@@ -26,6 +26,17 @@
       <!-- "Friday, April 4, 2026" — written by getDateDisplay() in app.js -->
       <div class="date" id="dateDisplay"></div>
     </div>
+    <form class="header-search" action="https://www.google.com/search" method="GET" target="_top">
+      <label class="sr-only" for="googleSearchInput">Search Google</label>
+      <input
+        id="googleSearchInput"
+        name="q"
+        type="search"
+        autocomplete="off"
+        placeholder="Search Google"
+      >
+      <button type="submit">Search</button>
+    </form>
   </header>
 
   <!-- ================================================================
@@ -45,6 +56,65 @@
     </div>
     <button class="tab-cleanup-btn" data-action="close-tabout-dupes">Close extras</button>
   </div>
+
+  <section class="planner-section" id="plannerSection">
+    <div class="section-header">
+      <h2>Today board</h2>
+      <div class="section-line"></div>
+      <div class="section-count" id="plannerSectionCount"></div>
+    </div>
+    <div class="planner-grid">
+      <section class="planner-card planner-card-daily">
+        <div class="planner-card-head">
+          <div>
+            <h3>每日日常打卡</h3>
+            <p>每天都会保留，勾选状态按今天单独记录。</p>
+          </div>
+          <div class="planner-pill" id="dailyRoutineCount"></div>
+        </div>
+        <div class="planner-list" id="dailyRoutineList"></div>
+        <div class="planner-empty" id="dailyRoutineEmpty" style="display:none">
+          还没有打卡项，先加上你的固定日常。
+        </div>
+        <form class="planner-form" data-list-type="daily">
+          <input
+            class="planner-input"
+            name="itemText"
+            type="text"
+            maxlength="80"
+            placeholder="新增日常打卡，例如：晨间拉伸"
+            required
+          >
+          <button class="planner-submit" type="submit">Add</button>
+        </form>
+      </section>
+
+      <section class="planner-card planner-card-today">
+        <div class="planner-card-head">
+          <div>
+            <h3>今日 todo 事项</h3>
+            <p>只保留今天的任务，明天会自动开启一张新清单。</p>
+          </div>
+          <div class="planner-pill" id="todayTodoCount"></div>
+        </div>
+        <div class="planner-list" id="todayTodoList"></div>
+        <div class="planner-empty" id="todayTodoEmpty" style="display:none">
+          今天还没有安排，先写下一件最重要的事。
+        </div>
+        <form class="planner-form" data-list-type="today">
+          <input
+            class="planner-input"
+            name="itemText"
+            type="text"
+            maxlength="80"
+            placeholder="新增今日 todo，例如：整理 PR 备注"
+            required
+          >
+          <button class="planner-submit" type="submit">Add</button>
+        </form>
+      </section>
+    </div>
+  </section>
 
   <!-- ================================================================
        MAIN CONTENT AREA — two-column layout

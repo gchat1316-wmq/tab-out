@@ -285,6 +285,179 @@ async function dismissSavedTab(id) {
 
 
 /* ----------------------------------------------------------------
+   DAILY PLANNER — chrome.storage.local
+
+   Two lists live above "Open tabs":
+   1. Daily routine items that persist every day, but reset completion daily
+   2. Today todos that auto-reset when the date changes
+   ---------------------------------------------------------------- */
+
+function getTodayKey() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function createItemId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizePlannerText(text) {
+  return (text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+function escapeHtml(text) {
+  return (text || '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[char]);
+}
+
+async function getPlannerState() {
+  const today = getTodayKey();
+  const { planner = {} } = await chrome.storage.local.get('planner');
+
+  const dailyRoutine = Array.isArray(planner.dailyRoutine)
+    ? planner.dailyRoutine.filter(item => item && item.id && item.text)
+    : [];
+
+  const todayTodos = planner.todayTodos && planner.todayTodos.date === today && Array.isArray(planner.todayTodos.items)
+    ? planner.todayTodos.items.filter(item => item && item.id && item.text)
+    : [];
+
+  return {
+    dailyRoutine,
+    todayTodos: {
+      date: today,
+      items: todayTodos,
+    },
+  };
+}
+
+async function savePlannerState(state) {
+  await chrome.storage.local.set({
+    planner: {
+      dailyRoutine: state.dailyRoutine,
+      todayTodos: state.todayTodos,
+    },
+  });
+}
+
+async function addPlannerItem(listType, text) {
+  const normalized = normalizePlannerText(text);
+  if (!normalized) return false;
+
+  const state = await getPlannerState();
+  const item = { id: createItemId(), text: normalized };
+
+  if (listType === 'daily') {
+    state.dailyRoutine.push({ ...item, checkedOn: null });
+  } else {
+    state.todayTodos.items.unshift({ ...item, completed: false });
+  }
+
+  await savePlannerState(state);
+  return true;
+}
+
+async function togglePlannerItem(listType, id, checked) {
+  const state = await getPlannerState();
+  const today = getTodayKey();
+
+  if (listType === 'daily') {
+    const item = state.dailyRoutine.find(entry => entry.id === id);
+    if (!item) return;
+    item.checkedOn = checked ? today : null;
+  } else {
+    const item = state.todayTodos.items.find(entry => entry.id === id);
+    if (!item) return;
+    item.completed = checked;
+  }
+
+  await savePlannerState(state);
+}
+
+async function removePlannerItem(listType, id) {
+  const state = await getPlannerState();
+
+  if (listType === 'daily') {
+    state.dailyRoutine = state.dailyRoutine.filter(item => item.id !== id);
+  } else {
+    state.todayTodos.items = state.todayTodos.items.filter(item => item.id !== id);
+  }
+
+  await savePlannerState(state);
+}
+
+function renderPlannerItem(item, listType) {
+  const today = getTodayKey();
+  const isChecked = listType === 'daily'
+    ? item.checkedOn === today
+    : !!item.completed;
+
+  return `
+    <div class="planner-item ${isChecked ? 'checked' : ''}" data-planner-id="${item.id}">
+      <label class="planner-check-row">
+        <input
+          type="checkbox"
+          class="planner-checkbox"
+          data-action="toggle-planner-item"
+          data-list-type="${listType}"
+          data-planner-id="${item.id}"
+          ${isChecked ? 'checked' : ''}
+        >
+        <span class="planner-item-text">${escapeHtml(item.text)}</span>
+      </label>
+      <button
+        class="planner-remove"
+        type="button"
+        data-action="remove-planner-item"
+        data-list-type="${listType}"
+        data-planner-id="${item.id}"
+        title="Remove item"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+      </button>
+    </div>`;
+}
+
+async function renderPlannerBoard() {
+  const dailyList = document.getElementById('dailyRoutineList');
+  const todayList = document.getElementById('todayTodoList');
+  const dailyEmpty = document.getElementById('dailyRoutineEmpty');
+  const todayEmpty = document.getElementById('todayTodoEmpty');
+  const dailyCount = document.getElementById('dailyRoutineCount');
+  const todayCount = document.getElementById('todayTodoCount');
+  const sectionCount = document.getElementById('plannerSectionCount');
+
+  if (!dailyList || !todayList) return;
+
+  const state = await getPlannerState();
+  const today = getTodayKey();
+  const dailyDone = state.dailyRoutine.filter(item => item.checkedOn === today).length;
+  const todayDone = state.todayTodos.items.filter(item => item.completed).length;
+
+  dailyList.innerHTML = state.dailyRoutine.map(item => renderPlannerItem(item, 'daily')).join('');
+  todayList.innerHTML = state.todayTodos.items.map(item => renderPlannerItem(item, 'today')).join('');
+
+  dailyEmpty.style.display = state.dailyRoutine.length === 0 ? 'block' : 'none';
+  todayEmpty.style.display = state.todayTodos.items.length === 0 ? 'block' : 'none';
+
+  dailyCount.textContent = `${dailyDone}/${state.dailyRoutine.length || 0}`;
+  todayCount.textContent = `${todayDone}/${state.todayTodos.items.length || 0}`;
+  sectionCount.textContent = `今日完成 ${dailyDone + todayDone} 项`;
+}
+
+
+/* ----------------------------------------------------------------
    UI HELPERS
    ---------------------------------------------------------------- */
 
@@ -1025,6 +1198,7 @@ async function renderStaticDashboard() {
   const dateEl     = document.getElementById('dateDisplay');
   if (greetingEl) greetingEl.textContent = getGreeting();
   if (dateEl)     dateEl.textContent     = getDateDisplay();
+  await renderPlannerBoard();
 
   // --- Fetch tabs ---
   await fetchOpenTabs();
@@ -1199,6 +1373,17 @@ document.addEventListener('click', async (e) => {
       setTimeout(() => { banner.style.display = 'none'; banner.style.opacity = '1'; }, 400);
     }
     showToast('Closed extra Tab Out tabs');
+    return;
+  }
+
+  if (action === 'remove-planner-item') {
+    const listType = actionEl.dataset.listType;
+    const itemId = actionEl.dataset.plannerId;
+    if (!listType || !itemId) return;
+
+    await removePlannerItem(listType, itemId);
+    await renderPlannerBoard();
+    showToast(listType === 'daily' ? 'Removed routine item' : 'Removed today task');
     return;
   }
 
@@ -1431,6 +1616,36 @@ document.addEventListener('click', async (e) => {
     showToast('All tabs closed. Fresh start.');
     return;
   }
+});
+
+document.addEventListener('submit', async (e) => {
+  const form = e.target.closest('.planner-form');
+  if (!form) return;
+
+  e.preventDefault();
+
+  const listType = form.dataset.listType;
+  const input = form.elements.itemText;
+  if (!(input instanceof HTMLInputElement) || !listType) return;
+
+  const added = await addPlannerItem(listType, input.value);
+  if (!added) return;
+
+  input.value = '';
+  await renderPlannerBoard();
+  showToast(listType === 'daily' ? 'Added daily routine item' : 'Added today task');
+});
+
+document.addEventListener('change', async (e) => {
+  const checkbox = e.target.closest('.planner-checkbox');
+  if (!checkbox) return;
+
+  const listType = checkbox.dataset.listType;
+  const itemId = checkbox.dataset.plannerId;
+  if (!listType || !itemId) return;
+
+  await togglePlannerItem(listType, itemId, checkbox.checked);
+  await renderPlannerBoard();
 });
 
 // ---- Archive toggle — expand/collapse the archive section ----
